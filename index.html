@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Flappy Bird</title>
+
+<!-- IMPORTANT FOR MOBILE -->
+<meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, user-scalable=no">
+
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #70c5ce;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    touch-action: manipulation;
+  }
+
+  #game-container {
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  canvas {
+    image-rendering: pixelated;
+  }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+  <canvas id="canvas" width="320" height="480"></canvas>
+</div>
+
+<script>
+"use strict";
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+// ================= SCALE CANVAS =================
+const GAME_WIDTH = 320;
+const GAME_HEIGHT = 480;
+
+function resizeCanvas() {
+  const scale = Math.min(
+    window.innerWidth / GAME_WIDTH,
+    window.innerHeight / GAME_HEIGHT
+  );
+
+  canvas.style.width = GAME_WIDTH * scale + "px";
+  canvas.style.height = GAME_HEIGHT * scale + "px";
+}
+
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
+// ================= ASSETS =================
+const bgImg = new Image();
+bgImg.src = "https://raw.githubusercontent.com/samuelcust/flappy-bird-assets/master/sprites/background-day.png";
+
+const groundImg = new Image();
+groundImg.src = "https://raw.githubusercontent.com/samuelcust/flappy-bird-assets/master/sprites/base.png";
+
+const pipeImg = new Image();
+pipeImg.src = "https://raw.githubusercontent.com/samuelcust/flappy-bird-assets/master/sprites/pipe-green.png";
+
+const birdImgs = [
+  "https://raw.githubusercontent.com/samuelcust/flappy-bird-assets/master/sprites/yellowbird-upflap.png",
+  "https://raw.githubusercontent.com/samuelcust/flappy-bird-assets/master/sprites/yellowbird-midflap.png",
+  "https://raw.githubusercontent.com/samuelcust/flappy-bird-assets/master/sprites/yellowbird-downflap.png"
+].map(src => {
+  const img = new Image();
+  img.src = src;
+  return img;
+});
+
+// ================= AUDIO =================
+const wing = new Audio("https://raw.githubusercontent.com/samuelcust/flappy-bird-assets/master/audio/wing.wav");
+const hit = new Audio("https://raw.githubusercontent.com/samuelcust/flappy-bird-assets/master/audio/hit.wav");
+const point = new Audio("https://raw.githubusercontent.com/samuelcust/flappy-bird-assets/master/audio/point.wav");
+
+// ================= GAME STATE =================
+const STATE = { START:0, PLAY:1, GAMEOVER:2 };
+let gameState = STATE.START;
+
+// ================= PATTERNS =================
+let bgPattern, groundPattern;
+let bgOffset = 0;
+let groundOffset = 0;
+
+// ================= GAME VARS =================
+let birdX = 50;
+let birdY = 200;
+let velocity = 0;
+
+const gravity = 0.45;
+const jump = -7;
+const gap = 100;
+
+let pipes = [{ x: GAME_WIDTH, y: -150 }];
+let score = 0;
+let best = localStorage.getItem("best") || 0;
+
+// ================= ANIMATION =================
+let frame = 0;
+let tick = 0;
+
+// ================= INPUT =================
+function input() {
+  if (gameState === STATE.START) {
+    gameState = STATE.PLAY;
+  } else if (gameState === STATE.PLAY) {
+    velocity = jump;
+    wing.play();
+  } else {
+    reset();
+  }
+}
+
+document.addEventListener("keydown", input);
+document.addEventListener("click", input);
+document.addEventListener("touchstart", e => {
+  e.preventDefault();
+  input();
+}, { passive:false });
+
+// ================= RESET =================
+function reset() {
+  birdY = 200;
+  velocity = 0;
+  pipes = [{ x: GAME_WIDTH, y: -150 }];
+  score = 0;
+  bgOffset = 0;
+  groundOffset = 0;
+  gameState = STATE.START;
+}
+
+// ================= GAME OVER =================
+function gameOver() {
+  if (gameState !== STATE.GAMEOVER) {
+    hit.play();
+    gameState = STATE.GAMEOVER;
+    best = Math.max(best, score);
+    localStorage.setItem("best", best);
+  }
+}
+
+// ================= DRAW LOOP =================
+function draw() {
+  if (!bgPattern || !groundPattern) {
+    requestAnimationFrame(draw);
+    return;
+  }
+
+  // BACKGROUND
+  ctx.save();
+  ctx.translate(bgOffset, 0);
+  ctx.fillStyle = bgPattern;
+  ctx.fillRect(-bgImg.width, 0, GAME_WIDTH + bgImg.width * 2, GAME_HEIGHT);
+  ctx.restore();
+
+  // PIPES
+  pipes.forEach(p => {
+    ctx.save();
+    ctx.translate(p.x + pipeImg.width, p.y + pipeImg.height);
+    ctx.rotate(Math.PI);
+    ctx.drawImage(pipeImg, 0, 0);
+    ctx.restore();
+
+    ctx.drawImage(pipeImg, p.x, p.y + pipeImg.height + gap);
+
+    if (gameState === STATE.PLAY) {
+      p.x -= 2;
+
+      if (p.x === 120) {
+        pipes.push({ x: GAME_WIDTH, y: Math.random() * -200 });
+      }
+
+      if (
+        birdX + 34 > p.x &&
+        birdX < p.x + pipeImg.width &&
+        (birdY < p.y + pipeImg.height ||
+         birdY + 24 > p.y + pipeImg.height + gap)
+      ) gameOver();
+
+      if (p.x === birdX) {
+        score++;
+        point.play();
+      }
+    }
+  });
+
+  // PHYSICS
+  if (gameState === STATE.PLAY) {
+    velocity += gravity;
+    birdY += velocity;
+
+    bgOffset = (bgOffset - 0.3) % bgImg.width;
+    groundOffset = (groundOffset - 2) % groundImg.width;
+
+    if (birdY + 24 >= GAME_HEIGHT - groundImg.height) gameOver();
+  }
+
+  // BIRD
+  tick++;
+  if (tick % 5 === 0) frame = (frame + 1) % 3;
+  ctx.drawImage(birdImgs[frame], birdX, birdY);
+
+  // GROUND
+  ctx.save();
+  ctx.translate(groundOffset, 0);
+  ctx.fillStyle = groundPattern;
+  ctx.fillRect(-groundImg.width, GAME_HEIGHT - groundImg.height,
+               GAME_WIDTH + groundImg.width * 2, groundImg.height);
+  ctx.restore();
+
+  // UI
+  ctx.fillStyle = "#fff";
+  ctx.font = "20px Arial";
+  ctx.fillText("Score: " + score, 10, 30);
+  ctx.fillText("Best: " + best, 10, 55);
+
+  if (gameState === STATE.START) {
+    ctx.font = "24px Arial";
+    ctx.fillText("TAP TO START", 70, 230);
+  }
+
+  if (gameState === STATE.GAMEOVER) {
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    ctx.fillStyle = "#fff";
+    ctx.font = "28px Arial";
+    ctx.fillText("GAME OVER", 70, 220);
+    ctx.font = "16px Arial";
+    ctx.fillText("Tap to Restart", 95, 250);
+  }
+
+  requestAnimationFrame(draw);
+}
+
+// ================= INIT =================
+bgImg.onload = () => bgPattern = ctx.createPattern(bgImg, "repeat");
+groundImg.onload = () => groundPattern = ctx.createPattern(groundImg, "repeat");
+
+draw();
+</script>
+
+</body>
+</html>
